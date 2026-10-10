@@ -1,0 +1,3 @@
+# Reviewed false positives for tools/playbook.ps1 scan.
+# One per line: <repo-relative path>|<pattern name>. Add a comment saying who reviewed it and why.
+# Never add an entry for another person's or organisation's data without asking its owner.

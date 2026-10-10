@@ -1,0 +1,7 @@
+{
+  "_comment": "EXAMPLE. Copy to tools/redact.local.json, which is git-ignored. These patterns name the things they hide, so this file must never be committed. Each key is a 'rules' name used in manifest.json. Each rule is a .NET regex 'find' and its 'replace' text.",
+  "myapp-notes": [
+    { "find": "\\bSERVER_ADDRESS_HERE\\b", "replace": "<SERVER_ADDRESS>" },
+    { "find": "[A-Za-z0-9._%+\\-]+@my-organisation\\.example", "replace": "<mailbox>@my-organisation.example" }
+  ]
+}

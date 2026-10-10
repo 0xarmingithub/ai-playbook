@@ -1,0 +1,2 @@
+# Store bytes exactly as they are on disk, so file hashes match between repo and live copies.
+* -text

@@ -1,0 +1,20 @@
+# per-machine state and backups, never commit
+.playbook-state.json
+.playbook-backup/
+
+# never commit
+.env
+.env.*
+*.pem
+*.key
+*.ppk
+.credentials.json
+settings.local.json
+*.bak
+*.bak-*
+__pycache__/
+*.pyc
+desktop.ini
+
+# private redaction rules and other machine-local config
+tools/*.local.json

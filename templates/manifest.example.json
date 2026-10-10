@@ -1,0 +1,24 @@
+{
+  "_comment": "EXAMPLE. Copy to tools/manifest.json and edit. Nothing is synced unless it is named here. Paths are relative to the root. A folder is synced recursively. Repo location: core -> core/<path>, ops -> ops/<path>, any other scope -> domains/<scope>/<path>.",
+  "roots": {
+    "home":  "%USERPROFILE%\\.claude",
+    "myapp": "C:\\path\\to\\my-workspace"
+  },
+  "shared": [
+    { "path": "skills/example-skill/SKILL.md", "targets": [
+        { "root": "myapp", "path": ".claude/skills/example-skill/SKILL.md" } ] }
+  ],
+  "entries": [
+    { "scope": "core", "root": "home", "path": "CLAUDE.md" },
+    { "scope": "core", "root": "home", "path": "skills/my-own-skill" },
+    { "scope": "core", "root": "home", "path": "settings.json", "type": "json-keys", "repoPath": "settings.base.json",
+      "keys": ["env", "hooks", "enabledPlugins", "extraKnownMarketplaces", "statusLine", "outputStyle", "model", "effortLevel"] },
+
+    { "scope": "myapp", "root": "myapp", "path": "CLAUDE.md" },
+    { "scope": "myapp", "root": "myapp", "path": "AGENTS.md" },
+    { "scope": "myapp", "root": "myapp", "path": ".claude/settings.json" },
+    { "scope": "myapp", "root": "myapp", "path": ".claude/skills", "exclude": ["runs", "example-skill/SKILL.md"] },
+    { "scope": "myapp", "root": "myapp", "path": "docs/notes-with-addresses.md", "type": "redacted", "rules": "myapp-notes",
+      "header": "<!-- Redacted copy for the playbook. The live file is the source. Never install this over it. -->" }
+  ]
+}
