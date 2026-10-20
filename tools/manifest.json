@@ -1,7 +1,7 @@
 {
   "_comment": "Allow-list. Nothing is synced unless it is named here. Copy entries from templates/manifest.example.json and edit. Repo location: core -> core/<path>, ops -> ops/<path>, any other scope -> domains/<scope>/<path>.",
   "roots": {
-    "home": "%USERPROFILE%\.claude"
+    "home": "%USERPROFILE%\\.claude"
   },
   "shared": [],
   "entries": []
