@@ -181,4 +181,4 @@ workspace names, paths and rules: keep it private, and publish only a template b
 - Invariants: the manifest is an allow-list; conflicts are never auto-resolved; redacted and json-keys entries are
   never installed over live files; nothing is pushed without the user's yes; a missing redaction file means skip,
   never copy unredacted; workspace names and other identifying details stay out of anything that may be shared.
-- Verify after any change: `playbook.ps1 status` shows no CONFLICT, and `playbook.ps1 scan` prints "Scan: clean."
+- Verify after any change: `playbook.ps1 status` shows no CONFLICT, `playbook.ps1 scan` prints "Scan: clean.", and `tools/health.ps1` exits 0 with no FAIL. `tools/test-scan.ps1` proves the scan still catches planted values. A SKIP is not a pass.

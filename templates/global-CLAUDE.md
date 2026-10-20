@@ -18,6 +18,9 @@ procedures belong in skills that load only when needed.
 
 ## Always
 
+- Before you cite a check as proof, name the result that would have made it fail, and confirm that result could have happened. Reject as proof: a tag compared with itself, a parent status standing in for child work, a suite total when you changed a subset, an empty result read as "nothing found" when the read may have failed, an exit code from a tool that exits zero having done nothing.
+- Resolve names, versions, paths and ids from the live artifact before acting, even when a rule file states them. If a rule file is stale, correct it in the same response.
+- Write scratch files outside the working tree. If one lands inside, name it `tmp_<purpose>` and delete it before you hand back. Detect strays by prefix, not by extension. Report residue you did not create; do not delete it.
 - <<FILL: a rule that holds in every workspace, for example "confirm before anything outward-facing">>
 - <<FILL: another>>
 

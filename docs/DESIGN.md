@@ -32,6 +32,7 @@ Code workspaces plus the global setup, with one command to keep repository and l
 | D17 | A local-only commit hook (inside `.git`, never published) runs a private term list over every commit to the published repo: added paths, added lines and the message. It fails closed if the list is missing | A rule that says "never include names" fails the first time someone forgets. The term list names the confidential things, so it cannot live in the published repo |
 | D18 | The published repo uses a neutral commit identity, with a reserved never-delivered email address | A real or no-reply address embeds an account handle in history, which the term list rightly flags |
 | D19 | Both repos are updated when a relevant change is made: the personal mirror for any rule, skill, agent or hook change; the published repo for changes to the method. Only the engine file is shared between them, byte-identical | Two repos drift unless the rule says which change belongs where |
+| D20 | `tools/health.ps1` checks the repo against its own invariants and reports SKIP, never PASS, for a check it cannot run. `tools/test-scan.ps1` plants known values and fails when the scan misses one or flags a clean line | A check that cannot go red is not evidence. The first health run found a broken manifest that `status` had been failing on without anyone noticing |
 
 ## What the critique rounds changed
 

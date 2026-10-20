@@ -12,7 +12,7 @@
     CONFLICT     both changed (or never synced and different) -> nothing moves unless -Force
     UNREADABLE   a read failed (Drive placeholder, lock) -> skipped, never treated as deleted
   Only paths named in tools/manifest.json are touched. `scan` blocks secrets AND sensitive identifiers
-  (IP addresses, emails, Azure subscription ids). It runs before every capture and as the git pre-commit
+  (IP addresses, emails, Azure subscription and tenant ids). It runs before every capture and as the git pre-commit
   hook. Approve a reviewed false positive by adding `<repo path>|<pattern>` to tools/scan-allow.txt.
   Entries of type json-keys (the global settings.json) copy only the named top-level keys, capture-only.
 
@@ -56,9 +56,10 @@ $Patterns = [ordered]@{
   'jwt'                = '\beyJ[A-Za-z0-9_\-]{10,}\.eyJ[A-Za-z0-9_\-]{10,}\.'
   'azure-storage'      = 'AccountKey=[A-Za-z0-9+/=]{20,}'
   'secret-assign'      = '(?i)\b(password|passwd|pwd|secret|api[_-]?key|access[_-]?key|auth[_-]?token|client[_-]?secret)\b["'']?\s*[:=]\s*["'']?[A-Za-z0-9/+_\-\.=]{16,}'
-  'ip-address'         = '(?<![\d.])(?!127\.|10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|0\.0\.0\.0|255\.|169\.254\.)(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)(?!\d|\.\d)'
+  'ip-address'         = '(?<![\d.])(?!127\.|10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|0\.0\.0\.0|255\.|169\.254\.|192\.0\.2\.|198\.51\.100\.|203\.0\.113\.|168\.63\.129\.16(?![\d.]))(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)(?!\d|\.\d)'
   'email-address'      = '\b(?!noreply@anthropic\.com\b|git@github\.com\b)[A-Za-z0-9._%+\-]+@(?!example\.(com|org)\b)[A-Za-z0-9\-]+(\.[A-Za-z0-9\-]+)*\.[A-Za-z]{2,}\b'
   'azure-subscription' = '/subscriptions/[0-9a-fA-F]{8}-'
+  'azure-tenant'       = '(?i)(tenant|subscription)[^\r\n]{0,40}\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b'
 }
 
 function Read-Manifest {
@@ -261,6 +262,8 @@ function Find-Hits([string]$path, [string]$label, $allow) {
   foreach ($line in [IO.File]::ReadLines($path)) {
     $n++
     foreach ($name in $Patterns.Keys) {
+      # A four-part version number such as 1.2.3.4 looks like a public IP. Skip the IP rule on lines that name a version.
+      if ($name -eq 'ip-address' -and $line -match '(?i)\bversion\b') { continue }
       if ($line -match $Patterns[$name]) {
         if (-not $allow.ContainsKey("$label|$name")) { $hits += "${label}:${n}:$name" }
       }
