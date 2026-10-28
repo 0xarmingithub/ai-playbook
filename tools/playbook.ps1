@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Keeps the ai-playbook repo and the live Claude Code files in sync. Windows PowerShell 5.1 safe.
+  Keeps the ai-playbook repo and the live Claude Code files in sync. Windows PowerShell 5.1 and PowerShell 7 (Linux) safe.
 
 .DESCRIPTION
   Three-way compare per file: live copy (L), repo copy (R), and the hash recorded at the last sync (S).
@@ -15,6 +15,9 @@
   (IP addresses, emails, Azure subscription and tenant ids). It runs before every capture and as the git pre-commit
   hook. Approve a reviewed false positive by adding `<repo path>|<pattern>` to tools/scan-allow.txt.
   Entries of type json-keys (the global settings.json) copy only the named top-level keys, capture-only.
+  Roots: tools/manifest.json holds the Windows roots. On another machine (for example Linux) put a git-ignored
+  tools/roots.local.json beside it, {"home": "/home/me/.claude", "myapp": "/home/me/ws/MyApp", ...}; it overrides those roots.
+  A root that is a Windows drive path and does not exist on this OS is reported as ROOT-MISSING and skipped.
 
 .EXAMPLE
   .\tools\playbook.ps1 status
@@ -36,6 +39,19 @@ $StatePath = Join-Path $RepoRoot '.playbook-state.json'
 $AllowPath = Join-Path $PSScriptRoot 'scan-allow.txt'
 $MaxBytes  = 1500000
 $Utf8NoBom = New-Object Text.UTF8Encoding($false)
+$Sep = [IO.Path]::DirectorySeparatorChar
+$UserHome = if ($env:USERPROFILE) { $env:USERPROFILE } else { $HOME }
+# Manifest paths are written with either slash; turn them into this OS's separator.
+function ConvertTo-NativePath([string]$p) { return $p.Replace('\', $Sep).Replace('/', $Sep) }
+# %USERPROFILE%, %HOME%, ~ and other %VAR% names; a Windows drive path cannot exist on Linux, so it becomes $null (ROOT-MISSING).
+function Expand-RootPath([string]$v) {
+  if (-not $v) { return $null }
+  $v = $v.Replace('%USERPROFILE%', $UserHome).Replace('%HOME%', $UserHome)
+  if ($v.StartsWith('~')) { $v = $UserHome + $v.Substring(1) }
+  $v = [Environment]::ExpandEnvironmentVariables($v)
+  if ($Sep -eq '/' -and $v -match '^[A-Za-z]:[\\/]') { return $null }
+  return (ConvertTo-NativePath $v)
+}
 $script:SkippedBig = New-Object System.Collections.ArrayList
 
 # Never synced, whatever the manifest says. Matched against every path segment.
@@ -65,7 +81,12 @@ $Patterns = [ordered]@{
 function Read-Manifest {
   $m = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
   $roots = @{}
-  foreach ($p in $m.roots.PSObject.Properties) { $roots[$p.Name] = [Environment]::ExpandEnvironmentVariables($p.Value) }
+  foreach ($p in $m.roots.PSObject.Properties) { $roots[$p.Name] = Expand-RootPath ([string]$p.Value) }
+  # Per-machine overrides (git-ignored): tools/roots.local.json
+  $ov = Join-Path $PSScriptRoot 'roots.local.json'
+  if (Test-Path -LiteralPath $ov) {
+    foreach ($p in (Get-Content -LiteralPath $ov -Raw -Encoding UTF8 | ConvertFrom-Json).PSObject.Properties) { $roots[$p.Name] = Expand-RootPath ([string]$p.Value) }
+  }
   $shared = @()
   if ($m.PSObject.Properties.Name -contains 'shared') { $shared = @($m.shared) }
   return @{ Roots = $roots; Entries = @($m.entries); Shared = $shared }
@@ -140,14 +161,14 @@ function Get-EntryFiles($entry, $liveRoot) {
   $rel = ([string]$entry.path).Replace('\', '/')
   $extra = @($entry.exclude)
   $found = @{}
-  $liveFull = Join-Path $liveRoot ($rel.Replace('/', '\'))
-  $repoFull = Join-Path $RepoRoot ((Get-RepoBase $entry.scope) + '/' + $rel).Replace('/', '\')
+  $liveFull = Join-Path $liveRoot ($rel.Replace('/', $Sep))
+  $repoFull = Join-Path $RepoRoot ((Get-RepoBase $entry.scope) + '/' + $rel).Replace('/', $Sep)
   foreach ($b in @($liveFull, $repoFull)) {
     if (Test-Path -LiteralPath $b -PathType Leaf) {
       if (-not (Test-Excluded $rel $extra)) { $found[$rel] = $true }
     }
     elseif (Test-Path -LiteralPath $b -PathType Container) {
-      $prefix = $b.TrimEnd('\') + '\'
+      $prefix = $b.TrimEnd('\', '/') + $Sep
       Get-ChildItem -LiteralPath $b -Recurse -File -Force -ErrorAction SilentlyContinue | ForEach-Object {
         $sub = $_.FullName.Substring($prefix.Length).Replace('\', '/')
         if (Test-Excluded $sub $extra) { return }
@@ -183,7 +204,7 @@ function Get-Plan {
     if ($e.type -eq 'json-keys') {
       $rel = [string]$e.repoPath
       $live = Join-Path $liveRoot ([string]$e.path)
-      $repo = Join-Path $RepoRoot ((Get-RepoBase $e.scope) + '/' + $rel).Replace('/', '\')
+      $repo = Join-Path $RepoRoot ((Get-RepoBase $e.scope) + '/' + $rel).Replace('/', $Sep)
       $text = Get-SubsetText $live $e.keys
       $L = $null; if ($text) { $L = Get-TextHash $text }
       $R = Get-Hash $repo; $key = $e.scope + '|' + $rel
@@ -193,8 +214,8 @@ function Get-Plan {
     }
     if ($e.type -eq 'redacted') {
       $rel = ([string]$e.path).Replace('\', '/')
-      $live = Join-Path $liveRoot ($rel.Replace('/', '\'))
-      $repo = Join-Path $RepoRoot ((Get-RepoBase $e.scope) + '/' + $rel).Replace('/', '\')
+      $live = Join-Path $liveRoot ($rel.Replace('/', $Sep))
+      $repo = Join-Path $RepoRoot ((Get-RepoBase $e.scope) + '/' + $rel).Replace('/', $Sep)
       $key = $e.scope + '|' + $rel
       $text = $null; $L = $null
       $rules = Get-RedactRules ([string]$e.rules)
@@ -211,8 +232,8 @@ function Get-Plan {
       continue
     }
     foreach ($rel in (Get-EntryFiles $e $liveRoot)) {
-      $live = Join-Path $liveRoot ($rel.Replace('/', '\'))
-      $repo = Join-Path $RepoRoot ((Get-RepoBase $e.scope) + '/' + $rel).Replace('/', '\')
+      $live = Join-Path $liveRoot ($rel.Replace('/', $Sep))
+      $repo = Join-Path $RepoRoot ((Get-RepoBase $e.scope) + '/' + $rel).Replace('/', $Sep)
       $key = $e.scope + '|' + $rel
       $L = Get-Hash $live; $R = Get-Hash $repo
       if (-not $L -and -not $R) { continue }
@@ -222,11 +243,11 @@ function Get-Plan {
   # Shared files: one canonical copy in shared/, installed identically into every target.
   if (-not $Scope -or ($Scope -contains 'shared')) {
     foreach ($s in $mf.Shared) {
-      $repo = Join-Path $RepoRoot ('shared/' + [string]$s.path).Replace('/', '\')
+      $repo = Join-Path $RepoRoot ('shared/' + [string]$s.path).Replace('/', $Sep)
       foreach ($t in @($s.targets)) {
         $root = $mf.Roots[[string]$t.root]
         if (-not $root -or -not (Test-Path -LiteralPath $root)) { [void]$plan.Add([pscustomobject]@{ Scope = 'shared'; Rel = [string]$s.path; Status = 'ROOT-MISSING'; Key = $null }); continue }
-        $live = Join-Path $root (([string]$t.path).Replace('/', '\'))
+        $live = Join-Path $root (([string]$t.path).Replace('/', $Sep))
         $key = 'shared|' + $s.path + '|' + $t.root
         $L = Get-Hash $live; $R = Get-Hash $repo
         if (-not $L -and -not $R) { continue }
@@ -275,14 +296,14 @@ function Find-Hits([string]$path, [string]$label, $allow) {
 function Invoke-Scan {
   $allow = Read-Allow
   $all = @()
-  $root = $RepoRoot.TrimEnd('\') + '\'
+  $root = $RepoRoot.TrimEnd('\', '/') + $Sep
   # Scan what git would commit (tracked, staged or untracked-but-not-ignored). Fall back to the folder if git is absent.
   $files = $null
   try {
     $listed = & git -C $RepoRoot ls-files -co --exclude-standard 2>$null
-    if ($LASTEXITCODE -eq 0 -and $listed) { $files = @($listed | ForEach-Object { Join-Path $RepoRoot ($_.Replace('/', '\')) } | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf }) }
+    if ($LASTEXITCODE -eq 0 -and $listed) { $files = @($listed | ForEach-Object { Join-Path $RepoRoot ($_.Replace('/', $Sep)) } | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf }) }
   } catch { $files = $null }
-  if (-not $files) { $files = @(Get-ChildItem -LiteralPath $RepoRoot -Recurse -File -Force | Where-Object { $_.FullName -notmatch '\\\.git\\' } | ForEach-Object { $_.FullName }) }
+  if (-not $files) { $files = @(Get-ChildItem -LiteralPath $RepoRoot -Recurse -File -Force | Where-Object { $_.FullName -notmatch '[\\/]\.git[\\/]' } | ForEach-Object { $_.FullName }) }
   foreach ($f in $files) {
     if ((Split-Path $f -Leaf) -eq '.playbook-state.json' -or $f -eq $PSCommandPath -or $f -eq $AllowPath) { continue }
     $label = $f.Substring($root.Length).Replace('\', '/')
@@ -307,10 +328,10 @@ function Invoke-Move([string]$direction) {
   $plan = Get-Plan
   $state = Read-State
   $allow = Read-Allow
-  $backupRoot = Join-Path $env:USERPROFILE (".playbook-backup\" + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+  $backupRoot = Join-Path $UserHome (".playbook-backup" + $Sep + (Get-Date -Format 'yyyyMMdd-HHmmss'))
   $want = if ($direction -eq 'capture') { @('live-only', 'live-ahead') } else { @('repo-only', 'repo-ahead') }
   $moved = 0; $blocked = 0; $conf = 0; $unread = 0
-  $root = $RepoRoot.TrimEnd('\') + '\'
+  $root = $RepoRoot.TrimEnd('\', '/') + $Sep
   foreach ($i in $plan) {
     if ($i.Status -eq 'UNREADABLE') { Write-Host ("  UNREADABLE {0}|{1}  (skipped; retry once Drive has synced it)" -f $i.Scope, $i.Rel) -ForegroundColor Yellow; $unread++; continue }
     if ($i.Status -eq 'CONFLICT') {
@@ -319,7 +340,7 @@ function Invoke-Move([string]$direction) {
 
     if ($direction -eq 'capture') {
       $label = $i.Repo.Substring($root.Length).Replace('\', '/')
-      if ($i.Kind -ne 'file') { $tmp = Join-Path $env:TEMP ('pb-' + [guid]::NewGuid().ToString('N') + '.tmp'); [IO.File]::WriteAllText($tmp, $i.Text, $Utf8NoBom); $scanFile = $tmp } else { $scanFile = $i.Live }
+      if ($i.Kind -ne 'file') { $tmp = Join-Path ([IO.Path]::GetTempPath()) ('pb-' + [guid]::NewGuid().ToString('N') + '.tmp'); [IO.File]::WriteAllText($tmp, $i.Text, $Utf8NoBom); $scanFile = $tmp } else { $scanFile = $i.Live }
       $hits = Find-Hits $scanFile $label $allow
       if ($tmp) { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue; $tmp = $null }
       if ($hits.Count) { Write-Host ("  BLOCKED   {0}|{1}  {2}" -f $i.Scope, $i.Rel, (($hits | Select-Object -First 4) -join ', ')) -ForegroundColor Red; $blocked++; continue }
@@ -335,7 +356,7 @@ function Invoke-Move([string]$direction) {
       if ($i.Kind -ne 'file') { Write-Host ("  manual    {0}|{1}  stored in reduced form ({2}); never installed over the live file, see docs/RESTORE.md" -f $i.Scope, $i.Rel, $i.Kind); continue }
       Write-Host ("  install   {0}|{1}  [{2}]" -f $i.Scope, $i.Rel, $i.Status)
       if (-not $DryRun) {
-        if (Test-Path -LiteralPath $i.Live) { Copy-One $i.Live (Join-Path $backupRoot ((($i.Scope + '\' + $i.Rel.Replace('/', '\')) -replace ' -> ', '__'))) }
+        if (Test-Path -LiteralPath $i.Live) { Copy-One $i.Live (Join-Path $backupRoot ((($i.Scope + $Sep + $i.Rel.Replace('/', $Sep)) -replace ' -> ', '__'))) }
         Copy-One $i.Repo $i.Live; $state[$i.Key] = (Get-Hash $i.Live)
       }
     }
@@ -415,7 +436,7 @@ function Invoke-Inventory {
   [void]$sb.AppendLine('')
   $gs = $null; $gsPath = Join-Path $home2 'settings.json'
   if (Test-Path -LiteralPath $gsPath) { $gs = Get-Content -LiteralPath $gsPath -Raw -Encoding UTF8 | ConvertFrom-Json }
-  $ipPath = Join-Path $home2 'plugins\installed_plugins.json'
+  $ipPath = Join-Path $home2 (ConvertTo-NativePath 'plugins\installed_plugins.json')
   $installed = $null; if (Test-Path -LiteralPath $ipPath) { $installed = Get-Content -LiteralPath $ipPath -Raw -Encoding UTF8 | ConvertFrom-Json }
   if ($installed -and $installed.plugins) {
     [void]$sb.AppendLine('| Plugin | Version | Enabled | Skills it provides |')
@@ -424,7 +445,7 @@ function Invoke-Inventory {
       $v = @($p.Value)[0]
       $en = 'no'; if ($gs -and $gs.enabledPlugins -and $gs.enabledPlugins.PSObject.Properties.Name -contains $p.Name -and $gs.enabledPlugins.($p.Name)) { $en = 'yes' }
       $names = @()
-      if ($v.installPath -and (Test-Path -LiteralPath (Join-Path $v.installPath 'skills'))) { $names = @(Get-ChildItem -LiteralPath (Join-Path $v.installPath 'skills') -Recurse -Filter SKILL.md -File | Where-Object { $_.FullName -notmatch '\\deprecated\\|\\in-progress\\' } | ForEach-Object { $_.Directory.Name } | Sort-Object -Unique) }
+      if ($v.installPath -and (Test-Path -LiteralPath (Join-Path $v.installPath 'skills'))) { $names = @(Get-ChildItem -LiteralPath (Join-Path $v.installPath 'skills') -Recurse -Filter SKILL.md -File | Where-Object { $_.FullName -notmatch '[\\/]deprecated[\\/]|[\\/]in-progress[\\/]' } | ForEach-Object { $_.Directory.Name } | Sort-Object -Unique) }
       $nm = if ($names.Count) { ($names -join ', ') } else { '(none)' }
       [void]$sb.AppendLine(('| `{0}` | {1} | {2} | {3} |' -f $p.Name, $v.version, $en, $nm))
     }
@@ -437,10 +458,10 @@ function Invoke-Inventory {
 
   [void]$sb.AppendLine('## 2. Skills synced from the Claude account (not stored in this repo)')
   [void]$sb.AppendLine('')
-  foreach ($base in @((Join-Path $home2 'plugins\synced'), (Join-Path $home2 'skills\synced'))) {
+  foreach ($base in @((Join-Path $home2 (ConvertTo-NativePath 'plugins\synced')), (Join-Path $home2 (ConvertTo-NativePath 'skills\synced')))) {
     if (-not (Test-Path -LiteralPath $base)) { continue }
     Get-ChildItem -LiteralPath $base -Recurse -Filter SKILL.md -File -ErrorAction SilentlyContinue | ForEach-Object {
-      $parts = $_.FullName.Substring($base.Length).TrimStart('\') -split '\\'
+      $parts = $_.FullName.Substring($base.Length).TrimStart('\', '/') -split '[\\/]'
       $owner = if ($base -like '*plugins*') { 'plugin ' + $parts[1] } else { 'account skill' }
       [void]$sb.AppendLine(('- `{0}` ({1}): {2}' -f $_.Directory.Name, $owner, (Get-Desc $_.FullName)))
     }
@@ -476,13 +497,13 @@ function Invoke-Inventory {
     [void]$sb.AppendLine('### ' + $name.ToUpper())
     [void]$sb.AppendLine('')
     if (-not $root -or -not (Test-Path -LiteralPath $root)) { [void]$sb.AppendLine('(root not reachable on this machine)'); continue }
-    $ag = Join-Path $root '.claude\agents'
+    $ag = Join-Path $root (ConvertTo-NativePath '.claude\agents')
     if (Test-Path -LiteralPath $ag) { [void]$sb.AppendLine('**Agents:** ' + ((Get-ChildItem -LiteralPath $ag -Filter *.md -File | ForEach-Object { $_.BaseName }) -join ', ')); [void]$sb.AppendLine('') }
     $mcp = Get-McpNames (Join-Path $root '.mcp.json')
     if ($mcp.Count) { [void]$sb.AppendLine('**MCP servers (names only):** ' + ($mcp -join ', ')); [void]$sb.AppendLine('') }
-    $hk = Get-HookLines (Join-Path $root '.claude\settings.json')
+    $hk = Get-HookLines (Join-Path $root (ConvertTo-NativePath '.claude\settings.json'))
     if ($hk.Count) { [void]$sb.AppendLine('| Event | Matcher | Script |'); [void]$sb.AppendLine('|---|---|---|'); $hk | ForEach-Object { [void]$sb.AppendLine($_) }; [void]$sb.AppendLine('') }
-    $sl = Get-SkillLines (Join-Path $root '.claude\skills')
+    $sl = Get-SkillLines (Join-Path $root (ConvertTo-NativePath '.claude\skills'))
     [void]$sb.AppendLine(('**Skills ({0}):**' -f $sl.Count)); [void]$sb.AppendLine('')
     if ($sl.Count) { [void]$sb.AppendLine('| Skill | What it does |'); [void]$sb.AppendLine('|---|---|'); $sl | ForEach-Object { [void]$sb.AppendLine($_) } }
   }
