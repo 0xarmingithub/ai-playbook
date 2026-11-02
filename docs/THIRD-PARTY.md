@@ -16,9 +16,7 @@ Add a marketplace once, then install: `/plugin marketplace add <owner/repo>` the
 | `codex` | `openai/codex-plugin-cc` | Hands tasks to OpenAI Codex as a second reviewer or implementer | not recorded |
 | `i-have-adhd` | `ayghri/i-have-adhd` | Shapes every answer for an ADHD reader: next action first, numbered steps, short lists | not recorded |
 | `mattpocock-skills` | `mattpocock/skills` | Engineering skills: TDD, diagnosing bugs, code review, grilling, specs, tickets, handoff | not recorded |
-| `show-me`, `visual-pr`, `improve-claude-md` | `humanlayer/skills` | Visual explanations; visual pull requests; rewrites a CLAUDE.md for better adherence | not recorded |
-| `answer-me-with-html` | `QingYunA/answer-me-with-html` | Turns an answer into a one-page visual HTML explainer | not recorded |
-| `auto-handoff` | `obie/auto-handoff` | Writes a handoff document so a fresh session can continue | not recorded |
+| `show-me` | `humanlayer/skills` | Visual explanations | not recorded |
 
 Anthropic's own marketplaces: `anthropics/claude-plugins-official`, `anthropics/knowledge-work-plugins`,
 `anthropics/claude-plugins-community`.
