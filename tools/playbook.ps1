@@ -15,6 +15,9 @@
   (IP addresses, emails, Azure subscription and tenant ids). It runs before every capture and as the git pre-commit
   hook. Approve a reviewed false positive by adding `<repo path>|<pattern>` to tools/scan-allow.txt.
   Entries of type json-keys (the global settings.json) copy only the named top-level keys, capture-only.
+  A folder entry may carry "include": ["*/memory/*"] to keep only files whose path below the folder matches one of
+  the patterns (checked before the size limit). An entry with "captureOnly": true is never installed and is left
+  out of the inventory; use it for per-machine data such as auto-memory.
   Roots: tools/manifest.json holds the Windows roots. On another machine (for example Linux) put a git-ignored
   tools/roots.local.json beside it, {"home": "/home/me/.claude", "myapp": "/home/me/ws/MyApp", ...}; it overrides those roots.
   A root that is a Windows drive path and does not exist on this OS is reported as ROOT-MISSING and skipped.
@@ -161,6 +164,7 @@ function Get-SubsetText([string]$path, $keys) {
 function Get-EntryFiles($entry, $liveRoot) {
   $rel = ([string]$entry.path).Replace('\', '/')
   $extra = @($entry.exclude)
+  $incl = @($entry.include | Where-Object { $_ })
   $found = @{}
   $liveFull = Join-Path $liveRoot ($rel.Replace('/', $Sep))
   $repoFull = Join-Path $RepoRoot ((Get-RepoBase $entry.scope) + '/' + $rel).Replace('/', $Sep)
@@ -172,6 +176,7 @@ function Get-EntryFiles($entry, $liveRoot) {
       $prefix = $b.TrimEnd('\', '/') + $Sep
       Get-ChildItem -LiteralPath $b -Recurse -File -Force -ErrorAction SilentlyContinue | ForEach-Object {
         $sub = $_.FullName.Substring($prefix.Length).Replace('\', '/')
+        if ($incl.Count) { $hit = $false; foreach ($g in $incl) { if ($sub -like $g) { $hit = $true; break } }; if (-not $hit) { return } }
         if (Test-Excluded $sub $extra) { return }
         foreach ($g in $extra) { if ($g -and ($sub -like $g)) { return } }
         if ($_.Length -gt $MaxBytes) { [void]$script:SkippedBig.Add($entry.scope + '|' + $rel + '/' + $sub); return }
@@ -238,7 +243,7 @@ function Get-Plan {
       $key = $e.scope + '|' + $rel
       $L = Get-Hash $live; $R = Get-Hash $repo
       if (-not $L -and -not $R) { continue }
-      [void]$plan.Add([pscustomobject]@{ Scope = $e.scope; Rel = $rel; Status = (Get-Status $L $R $state[$key]); Live = $live; Repo = $repo; Key = $key; L = $L; R = $R; Text = $null; Kind = 'file' })
+      [void]$plan.Add([pscustomobject]@{ Scope = $e.scope; Rel = $rel; Status = (Get-Status $L $R $state[$key]); Live = $live; Repo = $repo; Key = $key; L = $L; R = $R; Text = $null; Kind = 'file'; CaptureOnly = [bool]$e.captureOnly })
     }
   }
   # Shared files: one canonical copy in shared/, installed identically into every target.
@@ -355,6 +360,7 @@ function Invoke-Move([string]$direction) {
       }
     } else {
       if ($i.Kind -ne 'file') { Write-Host ("  manual    {0}|{1}  stored in reduced form ({2}); never installed over the live file, see docs/RESTORE.md" -f $i.Scope, $i.Rel, $i.Kind); continue }
+      if ($i.CaptureOnly) { continue }
       Write-Host ("  install   {0}|{1}  [{2}]" -f $i.Scope, $i.Rel, $i.Status)
       if (-not $DryRun) {
         if (Test-Path -LiteralPath $i.Live) { Copy-One $i.Live (Join-Path $backupRoot ((($i.Scope + $Sep + $i.Rel.Replace('/', $Sep)) -replace ' -> ', '__'))) }
@@ -491,7 +497,7 @@ function Invoke-Inventory {
   [void]$sb.AppendLine('## 5. Workspaces')
   # Every scope in the manifest except core and ops is a workspace. Its root is the root of its first entry.
   $scopeRoot = [ordered]@{}
-  foreach ($e in $mf.Entries) { if ($e.scope -ne 'core' -and $e.scope -ne 'ops' -and -not $scopeRoot.Contains([string]$e.scope)) { $scopeRoot[[string]$e.scope] = [string]$e.root } }
+  foreach ($e in $mf.Entries) { if ($e.scope -ne 'core' -and $e.scope -ne 'ops' -and -not $e.captureOnly -and -not $scopeRoot.Contains([string]$e.scope)) { $scopeRoot[[string]$e.scope] = [string]$e.root } }
   foreach ($name in @($scopeRoot.Keys)) {
     $root = $mf.Roots[$scopeRoot[$name]]
     [void]$sb.AppendLine('')
