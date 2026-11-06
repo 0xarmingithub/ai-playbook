@@ -46,7 +46,7 @@ here. They show up in your own inventory (`playbook.ps1 inventory`).
 | `codebase-memory-mcp` | Code knowledge graph for structural questions. Source not recorded; check its project page |
 | `docs-mcp-server` | Indexes documentation for search |
 | `chrome-devtools` | Browser debugging and performance traces |
-| `mcp-image` | Image generation |
+| `mcp-image` | Image generation through the Gemini API. Source: github.com/shinpr/mcp-image (npm `mcp-image`). Licence: MIT |
 
 Server definitions can hold tokens. Never store them in a playbook repo: record names only.
 
