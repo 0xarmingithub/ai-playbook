@@ -79,7 +79,8 @@ playbook). Only `PROFILE.md` differs.
 3. **New evidence beats new rhetoric.** If a critique point is checkable cheaply (a code
    read, a probe, a small computation), CHECK it in the rewrite rather than hedging it.
    A hedge is a critique that gave up.
-4. **Scope guard.** Mandatory only for the classes `PROFILE.md` names. For everything else
+4. **Scope guard.** Mandatory for the classes `PROFILE.md` names, and in every workspace for a
+   plan that waits for the user's go-ahead (2 or more steps). For everything else
    state `two-challenge: exempt` and move on. The rounds cost about 3x the output, so they are
    reserved for work where being wrong is expensive. When a deliverable sits on the boundary AND
    real money or production depends on it, run it.
