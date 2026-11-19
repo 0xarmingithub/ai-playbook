@@ -12,8 +12,11 @@ home for a procedure that some tasks need and most do not.
 | `<workspace>/.claude/skills/<name>/SKILL.md` | That workspace |
 | `shared/skills/<name>/SKILL.md` in this repo | The canonical copy. Install it byte-identical where it is needed |
 
-A workspace skill and a user-level skill with the same name collide. Rename one, or keep the
-workspace one and delete the other.
+Skills with the same name collide, and the winner is not the closest one: a user-level skill beats a
+project skill, and a skill beats a command file of the same name in `.claude/commands/`. So a generic
+user-level `session-start` silently replaces a workspace's own `session-start`, including its
+workspace-specific steps. Before you install a skill at user level, list the names already used in your
+workspaces. Where one collides, install the generic skill only into the workspaces that lack that name.
 
 ## Anatomy
 

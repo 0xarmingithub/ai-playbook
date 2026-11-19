@@ -2,8 +2,9 @@
 
 @AGENTS.md
 
-`AGENTS.md` (imported above) holds the rules for this workspace and works with any coding agent. Claude Code
-reads `CLAUDE.md` and does not read `AGENTS.md` by itself, so this file loads it. Add only Claude Code mechanics here.
+`AGENTS.md` (imported above) holds the rules for this workspace and works with any coding agent. When a
+`CLAUDE.md` exists, Claude Code reads it and not `AGENTS.md` (newer versions read `AGENTS.md` only when there is
+no `CLAUDE.md`), so this file imports it. Add only Claude Code mechanics here.
 
 ## Playbook sync
 

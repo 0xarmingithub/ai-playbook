@@ -20,7 +20,7 @@ Code workspaces plus the global setup, with one command to keep repository and l
 | D5 | The global `settings.json`: copy only named top-level keys, capture-only, never `permissions` | The permission list accumulates one-off commands that reveal what you work on |
 | D6 | `scan` blocks tokens, keys, public IPs, emails and Azure ids, before every capture and on commit | Infrastructure details are not "secret" patterns but must not leave their owner's control |
 | D7 | The sync rule is written once, in the user-level rules file. Each workspace carries only a short, conditional pointer to it that names no path | The user-level file loads in every workspace. A pointer in each workspace keeps the rule visible there and survives a rule file being read in isolation. It names no path and says "ignore if you have no such section", so it is safe in folders other people use |
-| D8 | A workspace that has `AGENTS.md` but no `CLAUDE.md` gets a `CLAUDE.md` that imports it | Claude Code reads `CLAUDE.md` only |
+| D8 | A workspace that has `AGENTS.md` but no `CLAUDE.md` gets a `CLAUDE.md` that imports it | Claude Code reads `CLAUDE.md` when one exists and ignores `AGENTS.md` beside it. Newer versions read `AGENTS.md` alone when there is no `CLAUDE.md`; the import stays the safe shape for every version |
 | D9 | No new hooks, no auto-commit, no auto-push | A failing hook blocks edits. Pushing is outward-facing |
 | D10 | A plugin marketplace is deferred | Plugins cannot carry `CLAUDE.md` rules |
 | D11 | Skills needed identically in several workspaces have one `SKILL.md` in `shared/`, installed byte-identical. Differences live in a `PROFILE.md` beside it | Equal files cannot hold workspace-specific rules. A profile keeps them without forking the skill |

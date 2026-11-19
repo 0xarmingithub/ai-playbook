@@ -16,15 +16,17 @@ look up what it reads before you copy anything, and re-check this page.
 | `CLAUDE.md` in the working folder and its parent folders | Every session started there |
 | `CLAUDE.md` in a subfolder | When the assistant reads files in that subfolder |
 | `@path/to/file.md` inside a `CLAUDE.md` | Inlined with the file that names it |
-| `AGENTS.md` | Never by itself. Import it with a line `@AGENTS.md` in `CLAUDE.md` |
+| `AGENTS.md` | Read on its own only when no `CLAUDE.md` exists in the working folder or above it (newer versions only). With both present, only `CLAUDE.md` loads, so import it with a line `@AGENTS.md` |
+| `.claude/rules/*.md` and `~/.claude/rules/*.md` | At session start, or only when a matching file is open if the rule sets a `paths` field |
 | `.claude/skills/<name>/SKILL.md` and `~/.claude/skills/<name>/SKILL.md` | The description is always in context. The body loads when the task matches it, or when you run `/<name>` |
 | A skill with `disable-model-invocation: true` | Only when you run it by name |
 | `.claude/agents/*.md` | Read at session start. A new agents folder needs a restart |
 | Hooks and permissions in `settings.json` | At session start. Edit, then restart or reload |
 | `settings.local.json` | Per machine. Never copy it into a repo |
 
-Check your own version's documentation for newer mechanisms, such as rule folders that load by file
-pattern. This table lists only what this playbook relies on.
+This table was checked against the Claude Code memory and skills documentation on 2026-11-19. Versions
+differ (for example, reading `AGENTS.md` directly needs a recent release), so check the documentation for
+your version before you rely on a row.
 
 ## Two shapes that work for `AGENTS.md`
 
