@@ -48,8 +48,8 @@ tools/playbook.ps1 (header comment), tools/manifest.json and everything in templ
 10 lines how it works: allow-list manifest, three-way compare (live copy, repo copy, hash at last sync), conflicts
 never auto-resolved, secret and sensitive-data scan, shared files with per-workspace PROFILE.md, redacted copies
 with private rules, and why live files stay where they are. Check my operating system and shell. The sync tool is
-Windows PowerShell 5.1 only. If I am not on Windows, say so and propose porting it to my shell or Python, tested in a
-throwaway sandbox, before we rely on it.
+Windows PowerShell 5.1 and PowerShell 7 (`pwsh`, including Linux). If my shell is neither, say so and propose a port,
+tested in a throwaway sandbox, before we rely on it.
 
 PHASE 1 - LOOK AT MY MACHINE (read-only, names only)
 List, without opening anything beyond instruction files and skill headers: my global Claude Code folder
@@ -121,19 +121,21 @@ which tells it which side changed. If both changed it reports CONFLICT and moves
 
 | Folder | What it holds |
 |---|---|
-| `tools/` | `playbook.ps1` (the engine), `manifest.json` (empty allow-list), `scan-allow.txt` |
-| `templates/` | Blank starting points: manifest, redaction rules, global and workspace rule files, skill profile |
-| `shared/` | `skills/double-critique`: a generic two-round self-review skill, installed identically into each workspace that wants it |
-| `docs/` | `DESIGN.md` (why), `THIRD-PARTY.md` (what others made), `SHARING.md` (before you publish), `RESTORE.md` |
+| `tools/` | `playbook.ps1` (the engine), `manifest.json` (empty allow-list), `scan-allow.txt`, `health.ps1` (self-check), `check-templates.ps1` (lists unfilled markers), and the tests `test-scan.ps1`, `test-engine.ps1`, `test-health.ps1` |
+| `templates/` | Blank starting points: `manifest.example.json`, `redact.local.example.json`, `global-CLAUDE.md`, `workspace-CLAUDE.md`, `workspace-AGENTS.md`, `PROFILE.md`, `working-reference.md` (a current-state file), `gotchas-template.md` |
+| `shared/` | 7 shared skills (all generic), each installed identically into every workspace that wants it: `double-critique` (two-round self-review), `session-start`, `end-of-session`, `pre-close-verification`, `branch-hygiene`, `directional-prompting`, and `prod-deploy` (an optional template) |
+| `docs/` | `DESIGN.md` (why), `THIRD-PARTY.md` (what others made, and how to vet it), `SHARING.md` (before you publish), `RESTORE.md`, `LOADING.md` (what Claude Code loads and how to check), `SKILLS.md` (writing and testing a skill), `MEMORY.md` (notes and memory habits) |
+| `examples/` | `filled-global-CLAUDE.md`: a filled-in rule file to compare your own against |
 
 Your own copy will add `core/` (global files), `domains/<scope>/` (one folder per workspace) and, if you like, `ops/`.
 
 ## Commands
 
 ```powershell
-.\tools\playbook.ps1 status               # what drifted (-All lists every file)
+.\tools\playbook.ps1 status               # what drifted (-All lists every file; -Strict exits 1 unless all in sync)
 .\tools\playbook.ps1 capture -Scope myapp # live -> repo (add -DryRun to preview)
-.\tools\playbook.ps1 install -Scope core  # repo -> live (backs up what it overwrites)
+.\tools\playbook.ps1 install -Scope core  # repo -> live (backs up what it overwrites; also restores a live file that was synced once and then deleted)
+.\tools\playbook.ps1 baseline -Scope myapp # accept a reviewed pair that differs on purpose (a platform variant), copying nothing
 .\tools\playbook.ps1 scan                 # secrets and sensitive data (also the pre-commit hook)
 .\tools\playbook.ps1 inventory            # write docs/INVENTORY.md: every plugin, skill, agent, hook
 ```
@@ -175,7 +177,7 @@ workspace names, paths and rules: keep it private, and publish only a template b
 
 ## Facts for agents
 
-- Language and runtime: Windows PowerShell 5.1 (`tools/playbook.ps1`). Not tested elsewhere.
+- Language and runtime: Windows PowerShell 5.1 and PowerShell 7 (`tools/playbook.ps1`), both covered by `tools/test-engine.ps1`.
 - Repo location rule: outside any cloud-synced folder.
 - Entry points: `tools/manifest.json` (what is synced), `tools/playbook.ps1` (how), `docs/DESIGN.md` (why).
 - Invariants: the manifest is an allow-list; conflicts are never auto-resolved; redacted and json-keys entries are

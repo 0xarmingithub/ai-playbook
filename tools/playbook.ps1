@@ -1,16 +1,33 @@
 <#
 .SYNOPSIS
-  Keeps the ai-playbook repo and the live Claude Code files in sync. Windows PowerShell 5.1 and PowerShell 7 (Linux) safe.
+  Keeps the ai-playbook repo and the live Claude Code files in sync. Runs under Windows PowerShell 5.1 (powershell.exe)
+  and PowerShell 7 (pwsh, Windows or Linux).
 
 .DESCRIPTION
+  Commands: status | capture | install | baseline | scan | inventory   (default: status)
+  Switches: -Scope <name,...>  -Force  -DryRun  -All  -Strict
+    status     list every file that is not in-sync. Exit code 0, unless -Strict is given: then exit code 1 unless
+               every entry is in-sync (live-only, ROOT-MISSING, UNREADABLE and the rest all count as not in-sync).
+    capture    copy live-only / live-ahead files into the repo (scanned first).
+    install    copy repo-only / repo-ahead files onto the live path. A file that was synced once and is now absent
+               live (live-deleted) is restored from the repo too. Redacted, json-keys and captureOnly entries are
+               never installed.
+    baseline   needs -Scope. For plain file entries whose live and repo copies both exist and intentionally differ
+               (for example a Linux variant), record BOTH current hashes as the reviewed state and copy nothing.
+               The entry then reads in-sync while neither side moves, and CONFLICT again once either side changes.
+               Redacted, json-keys and captureOnly entries are skipped. -DryRun shows what would be recorded.
   Three-way compare per file: live copy (L), repo copy (R), and the hash recorded at the last sync (S).
-    in-sync      L = R
+    in-sync      L = R (or both sides still match a reviewed `baseline`)
     live-ahead   L changed, R still = S      -> `capture` copies live into the repo
     repo-ahead   R changed, L still = S      -> `install` copies the repo onto the live path
     live-only    file exists only live       -> `capture`
     repo-only    file exists only in the repo-> `install`
+    live-deleted synced once, now absent live-> `install` restores it
+    repo-deleted synced once, now absent in the repo -> reported only
     CONFLICT     both changed (or never synced and different) -> nothing moves unless -Force
     UNREADABLE   a read failed (Drive placeholder, lock) -> skipped, never treated as deleted
+  State file .playbook-state.json (git-ignored, per machine): one hash per entry after a capture or install; after a
+  `baseline`, an object {"live": hash, "repo": hash}. Old files with one hash per entry load unchanged.
   Only paths named in tools/manifest.json are touched. `scan` blocks secrets AND sensitive identifiers
   (IP addresses, emails, Azure subscription and tenant ids). It runs before every capture and as the git pre-commit
   hook. Approve a reviewed false positive by adding `<repo path>|<pattern>` to tools/scan-allow.txt.
@@ -26,15 +43,18 @@
   .\tools\playbook.ps1 status
   .\tools\playbook.ps1 capture -Scope myapp -DryRun
   .\tools\playbook.ps1 install -Scope core
+  .\tools\playbook.ps1 baseline -Scope myapp -DryRun
+  .\tools\playbook.ps1 status -Strict
   .\tools\playbook.ps1 scan
 #>
 [CmdletBinding()]
 param(
-  [Parameter(Position = 0)][ValidateSet('status', 'capture', 'install', 'scan', 'inventory')][string]$Command = 'status',
+  [Parameter(Position = 0)][ValidateSet('status', 'capture', 'install', 'baseline', 'scan', 'inventory')][string]$Command = 'status',
   [string[]]$Scope,
   [switch]$Force,
   [switch]$DryRun,
-  [switch]$All
+  [switch]$All,
+  [switch]$Strict
 )
 $ErrorActionPreference = 'Stop'
 $RepoRoot  = Split-Path -Parent $PSScriptRoot
@@ -116,7 +136,15 @@ function Read-State {
   $h = @{}
   if (Test-Path -LiteralPath $StatePath) {
     $o = Get-Content -LiteralPath $StatePath -Raw -Encoding UTF8 | ConvertFrom-Json
-    foreach ($p in $o.PSObject.Properties) { $h[$p.Name] = [string]$p.Value }
+    foreach ($p in $o.PSObject.Properties) {
+      $v = $p.Value
+      # Old format: one hash string per entry. After a baseline: an object with the live and the repo hash.
+      if ($v -is [string]) { $h[$p.Name] = $v }
+      elseif ($null -ne $v -and ($v.PSObject.Properties.Name -contains 'live') -and ($v.PSObject.Properties.Name -contains 'repo')) {
+        $h[$p.Name] = [pscustomobject]@{ live = [string]$v.live; repo = [string]$v.repo }
+      }
+      else { $h[$p.Name] = [string]$v }
+    }
   }
   return $h
 }
@@ -124,7 +152,7 @@ function Read-State {
 function Write-State($h) {
   $ordered = [ordered]@{}
   foreach ($k in ($h.Keys | Sort-Object)) { $ordered[$k] = $h[$k] }
-  [IO.File]::WriteAllText($StatePath, ($ordered | ConvertTo-Json), $Utf8NoBom)
+  [IO.File]::WriteAllText($StatePath, (ConvertTo-Json -InputObject $ordered -Depth 5), $Utf8NoBom)
 }
 
 function Test-Excluded([string]$rel, $extra) {
@@ -187,13 +215,21 @@ function Get-EntryFiles($entry, $liveRoot) {
   return @($found.Keys | Sort-Object)
 }
 
+# $S is the stored state: $null, one hash string (live and repo were equal when recorded), or an object with .live and
+# .repo (a reviewed baseline of two different copies).
 function Get-Status($L, $R, $S) {
+  $SL = $null; $SR = $null; $two = $false
+  if ($S -is [string]) { $SL = $S; $SR = $S }
+  elseif ($null -ne $S) { $SL = [string]$S.live; $SR = [string]$S.repo; $two = $true }
   if ($L -eq '__UNREADABLE__' -or $R -eq '__UNREADABLE__') { return 'UNREADABLE' }
   if ($L -and $R -and $L -eq $R) { return 'in-sync' }
-  if ($L -and -not $R) { if ($S -and $S -eq $L) { return 'repo-deleted' } else { return 'live-only' } }
-  if ($R -and -not $L) { if ($S -and $S -eq $R) { return 'live-deleted' } else { return 'repo-only' } }
-  if ($S -and $S -eq $R) { return 'live-ahead' }
-  if ($S -and $S -eq $L) { return 'repo-ahead' }
+  # A baselined pair (two different reviewed hashes): untouched is in-sync, any change on either side is a CONFLICT,
+  # so a variant is never overwritten by a one-sided capture or install.
+  if ($two -and $L -and $R) { if ($L -eq $SL -and $R -eq $SR) { return 'in-sync' } else { return 'CONFLICT' } }
+  if ($L -and -not $R) { if ($SL -and $SL -eq $L) { return 'repo-deleted' } else { return 'live-only' } }
+  if ($R -and -not $L) { if ($SR -and $SR -eq $R) { return 'live-deleted' } else { return 'repo-only' } }
+  if ($SR -and $SR -eq $R) { return 'live-ahead' }
+  if ($SL -and $SL -eq $L) { return 'repo-ahead' }
   return 'CONFLICT'
 }
 
@@ -342,7 +378,10 @@ function Invoke-Move([string]$direction) {
     if ($i.Status -eq 'UNREADABLE') { Write-Host ("  UNREADABLE {0}|{1}  (skipped; retry once Drive has synced it)" -f $i.Scope, $i.Rel) -ForegroundColor Yellow; $unread++; continue }
     if ($i.Status -eq 'CONFLICT') {
       if (-not $Force) { Write-Host ("  CONFLICT  {0}|{1}  (both sides changed; -Force makes the {2} side win)" -f $i.Scope, $i.Rel, $(if ($direction -eq 'capture') { 'live' } else { 'repo' })) -ForegroundColor Yellow; $conf++; continue }
-    } elseif ($want -notcontains $i.Status) { continue }
+    } elseif ($want -notcontains $i.Status) {
+      # A file synced once and now absent live is restored from the repo, for plain file entries only.
+      if (-not ($direction -eq 'install' -and $i.Status -eq 'live-deleted' -and $i.Kind -eq 'file' -and -not $i.CaptureOnly)) { continue }
+    }
 
     if ($direction -eq 'capture') {
       $label = $i.Repo.Substring($root.Length).Replace('\', '/')
@@ -370,7 +409,8 @@ function Invoke-Move([string]$direction) {
     $moved++
   }
   if (-not $DryRun) {
-    foreach ($i in $plan) { if ($i.Status -eq 'in-sync') { $state[$i.Key] = $i.L } }
+    # Only a truly equal pair is refreshed; a baselined pair (L differs from R) keeps its two stored hashes.
+    foreach ($i in $plan) { if ($i.Status -eq 'in-sync' -and $i.L -eq $i.R) { $state[$i.Key] = $i.L } }
     Write-State $state
   }
   $tag = if ($DryRun) { ' (dry run, nothing written)' } else { '' }
@@ -378,6 +418,34 @@ function Invoke-Move([string]$direction) {
   if ($script:SkippedBig.Count) { Write-Host ("Skipped {0} file(s) over {1} bytes: {2}" -f $script:SkippedBig.Count, $MaxBytes, (($script:SkippedBig | Select-Object -First 3) -join ', ')) }
   if ($direction -eq 'install' -and $moved -gt 0 -and -not $DryRun) { Write-Host "Overwritten live files were backed up under $backupRoot" }
   if ($direction -eq 'capture' -and $moved -gt 0 -and -not $DryRun) { Write-Host 'Next: review `git status` in the repo, then commit. Push only when you mean to.' }
+}
+
+# Records both current hashes of each plain file entry whose live and repo copies differ on purpose. Copies nothing.
+# Returns the exit code: 1 when no -Scope was given.
+function Invoke-Baseline {
+  if (-not $Scope) {
+    Write-Host 'baseline needs -Scope <name>: it accepts differences as reviewed, so it is never run over everything.' -ForegroundColor Red
+    return 1
+  }
+  $plan = Get-Plan
+  $state = Read-State
+  $done = 0; $skipped = 0; $same = 0
+  foreach ($i in $plan) {
+    $name = '{0}|{1}' -f $i.Scope, $i.Rel
+    if ($i.Status -eq 'ROOT-MISSING' -or $i.Status -eq 'NO-RULES') { Write-Host ("  skip      {0}  [{1}] root or rules not available on this machine" -f $name, $i.Status); $skipped++; continue }
+    if ($i.Kind -ne 'file') { Write-Host ("  skip      {0}  [{1}] stored in reduced form ({2}); its repo copy is not a copy of the live file" -f $name, $i.Status, $i.Kind); $skipped++; continue }
+    if ($i.CaptureOnly) { Write-Host ("  skip      {0}  [{1}] captureOnly entry" -f $name, $i.Status); $skipped++; continue }
+    if ($i.Status -eq 'UNREADABLE') { Write-Host ("  skip      {0}  [UNREADABLE] retry once Drive has synced it" -f $name) -ForegroundColor Yellow; $skipped++; continue }
+    if ($i.Status -eq 'in-sync') { $same++; continue }
+    if (-not $i.L -or -not $i.R) { Write-Host ("  skip      {0}  [{1}] only one side exists, nothing to compare" -f $name, $i.Status); $skipped++; continue }
+    Write-Host ("  baseline {0}  [{1}] live and repo copies recorded as reviewed" -f $name, $i.Status)
+    if (-not $DryRun) { $state[$i.Key] = [pscustomobject]@{ live = [string]$i.L; repo = [string]$i.R } }
+    $done++
+  }
+  if (-not $DryRun -and $done -gt 0) { Write-State $state }
+  $tag = ''; if ($DryRun) { $tag = ' (dry run, nothing written)' }
+  Write-Host ("baseline: {0} recorded, {1} skipped, {2} already in-sync{3}" -f $done, $skipped, $same, $tag)
+  return 0
 }
 
 function Get-Desc([string]$file) {
@@ -539,8 +607,13 @@ switch ($Command) {
     Write-Host ''
     ($plan | Group-Object Scope, Status | Sort-Object Name | ForEach-Object { '{0,-24} {1}' -f $_.Name, $_.Count }) | Write-Host
     if ($script:SkippedBig.Count) { Write-Host ("Skipped {0} file(s) over {1} bytes." -f $script:SkippedBig.Count, $MaxBytes) }
-    Write-Host 'live-ahead / live-only -> capture.   repo-ahead / repo-only -> install.   CONFLICT -> compare by hand.   (-All lists every file)'
+    Write-Host 'live-ahead / live-only -> capture.   repo-ahead / repo-only / live-deleted -> install.   CONFLICT -> compare by hand or baseline.   (-All lists every file, -Strict exits 1 unless all in-sync)'
+    if ($Strict) {
+      $bad = @($plan | Where-Object { $_.Status -ne 'in-sync' })
+      if ($bad.Count) { Write-Host ("Strict: {0} entry/entries not in-sync." -f $bad.Count) -ForegroundColor Red; exit 1 }
+    }
   }
   'capture' { Invoke-Move 'capture' }
   'install' { Invoke-Move 'install' }
+  'baseline' { exit (Invoke-Baseline) }
 }

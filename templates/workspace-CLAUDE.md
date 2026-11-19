@@ -17,4 +17,5 @@ purpose, so it is safe in a folder other people use.
 - Subagents: <<FILL: which ones exist, what each may touch, what to check after each run>>
 - Hooks: <<FILL: which hooks guard this workspace, and what each one blocks>>
 - Skills: <<FILL: the skills that matter here, and when each fires>>
-- Several sessions on one checkout? <<FILL: yes or no. If yes: commit only the files your task produced, by name>>
+- Several sessions on one checkout? <<FILL: yes or no. If yes: record the ownership baseline first (see the user-level rules), then commit only the files your task produced, by name>>
+- Mirrored copies (logic or files that exist twice and must change together): <<FILL: list each pair, or "none">>

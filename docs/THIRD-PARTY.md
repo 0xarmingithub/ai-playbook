@@ -69,7 +69,37 @@ the source, or write your own.
 | `llm-council` | origin not recorded | MIT |
 | foundation of a `.claude/skills` system | `addyosmani/agent-skills` | not recorded |
 
-## 5. Keeping your own list
+### Skill sets published by vendors
+
+| Skill set | Source | Licence as recorded |
+|---|---|---|
+| `azure-*`, `entra-*`, `microsoft-foundry` and related (about 28 skills) | `microsoft/azure-skills`, folder `.github/plugins/azure-skills/skills/` | MIT, declared in each skill's own frontmatter |
+
+Install such a set from its source, not from a copy someone else froze. Pick only the skills you
+use: each one adds its description to every request, and overlapping descriptions make the
+right choice harder. Check the source for current names; they change.
+
+## 5. Vetting before adoption
+
+Run this before you install a skill, MCP server or plugin that did not come from a first-party
+vendor or from your own folders.
+
+1. **Read it.** A skill is instructions plus scripts that run with your permissions. Look for
+   downloads piped to a shell, `eval`, encoded blobs, reads of environment variables or key files,
+   and network calls to hosts you do not know.
+2. **Check source and licence.** If either is not recorded, do not copy it into a repo.
+3. **Scan one skill folder at a time** with a static scanner (SkillSpector, listed above, runs
+   offline with `--no-llm`). Pointing it at a whole tree gives a meaningless total, because it
+   treats the tree as one skill and flags ordinary provisioning commands.
+4. **Read the findings.** Install when the score is low, or when you have reviewed every high
+   finding. Treat the score as advice: the tool is young and has one maintainer.
+5. **Record it** in your own list (next section), with the date and the result.
+
+Heavy runtime governance proxies are the wrong tool for a local setup: they intercept all traffic
+and conflict with corporate proxies and local tooling. Revisit only if you ingest outside registries
+at scale.
+
+## 6. Keeping your own list
 
 When you install or adapt something, add a row: name, source, licence as the source states it, and whether a copy sits
 in your repo. A copy with an unknown licence should stay out of any repo you make public (see `docs/SHARING.md`).

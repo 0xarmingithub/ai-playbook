@@ -33,6 +33,12 @@ Code workspaces plus the global setup, with one command to keep repository and l
 | D18 | The published repo uses a neutral commit identity, with a reserved never-delivered email address | A real or no-reply address embeds an account handle in history, which the term list rightly flags |
 | D19 | Both repos are updated when a relevant change is made: the personal mirror for any rule, skill, agent or hook change; the published repo for changes to the method. Only the engine file is shared between them, byte-identical | Two repos drift unless the rule says which change belongs where |
 | D20 | `tools/health.ps1` checks the repo against its own invariants and reports SKIP, never PASS, for a check it cannot run. `tools/test-scan.ps1` plants known values and fails when the scan misses one or flags a clean line | A check that cannot go red is not evidence. The first health run found a broken manifest that `status` had been failing on without anyone noticing |
+| D21 | Generic working-method procedures (`session-start`, `end-of-session`, `pre-close-verification`, `branch-hygiene`, `directional-prompting`, optional `prod-deploy`) are shared skills, not rules pasted into every workspace file. The few rules that must hold even when no skill fires (ownership baseline, a fix is unreviewed work, mirrored copies, parallel agents, vetting, session breakpoints) are single short lines in the user-level template that point at the skill | A skill's body loads only on demand, so the always-on file stays short. A rule that depends on remembering to invoke a skill needs one line that is always there |
+| D22 | Session length is an offer, not a stop. The template says to offer a fresh session at a breakpoint or after about 40 tool calls or 250 messages, and never to stop mid-task | Long threads loop and compact repeatedly, but a hard stop contradicts "finish the whole task". The offer keeps both |
+| D23 | `docs/LOADING.md` covers Claude Code only. Rule-file loading differs per tool, so a second tool means a new, verified section, not a guess | Loading fails silently, and a table of unverified cells is worse than none |
+| D24 | Third-party skills are installed from their source, never from a frozen copy in a repo. The repo records the source, the licence as stated, and the vetting result | A frozen copy goes stale, drops upstream removals, and carries a licence notice duty. A pointer does none of that |
+| D25 | The sync engine supports a `baseline` command, `status -Strict`, and PowerShell 7 | A repo copy that intentionally differs from the live copy (a platform variant) otherwise reads as CONFLICT forever, which hides real conflicts. `-Strict` is opt-in so existing callers keep their exit codes |
+
 
 ## What the critique rounds changed
 
@@ -51,4 +57,6 @@ Code workspaces plus the global setup, with one command to keep repository and l
 - A mirror of a repo that has its own git history is a snapshot and can go stale until the next `capture`. `status` shows it.
 - The scan finds patterns, not meaning. A human must read anything before it is published.
 - `capture` is not automatic. If nobody runs it, the mirror ages.
-- The engine is Windows PowerShell 5.1 only.
+- The engine runs on Windows PowerShell 5.1 and PowerShell 7. Other shells are untested.
+- `install` now restores a file that was synced once and then deleted live (D25). That is the right default for a lost file, but it also brings back a file you deleted on purpose. Delete the repo copy too, or exclude the entry.
+- A state file holding baselined entries reads as CONFLICT to an older engine copy on another machine. That is the safe direction.
